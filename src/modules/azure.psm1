@@ -109,7 +109,7 @@ function New-LzSubscription {
         #* Onboard existing if needed
         Write-Host "- Onboarding existing subscription reference"
         try {
-            $subAlias = New-AzSubscriptionAlias -AliasName $AliasName -SubscriptionId $SubscriptionId
+            $subAlias = New-AzSubscriptionAlias -AliasName $AliasName -SubscriptionId $SubscriptionId -ErrorAction Stop
         }
         catch {
             Write-Warning -Message "Failed to create Subscription Alias resource, assuming it already exists. [$($_.ToString())]"
