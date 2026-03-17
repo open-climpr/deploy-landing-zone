@@ -105,8 +105,9 @@ runs:
           Write-Host "Installed Bicep version:"
           bicep --version
 
-          Write-Host "Installed PowerShell modules:"
+          echo "::group::Installed PowerShell modules"
           Get-Module -ListAvailable | Format-Table Name, Version, PSEdition
+          echo "::endgroup::"
 
           #* Set-PartnerId.ps1
           echo "::group::Set-PartnerId"
