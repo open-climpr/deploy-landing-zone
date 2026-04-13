@@ -3,7 +3,7 @@ description: This workflow deploys and decommissions Landing Zones.
 
 inputs:
   solution-path:
-    description: Path to the Climpr Landing Zones solution directory.
+    description: Path to the open-climpr Landing Zones solution directory.
     required: true
 
   landing-zone-path:
@@ -51,7 +51,7 @@ runs:
         git config user.email github-actions@github.com
 
     - name: Install PS Modules
-      uses: climpr/install-psmodules@v1
+      uses: open-climpr/install-psmodules@v1
       with:
         modules: |
           Az.ManagementPartner

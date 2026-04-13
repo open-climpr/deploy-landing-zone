@@ -1,17 +1,17 @@
-# Climpr - Deploy Landing Zone
+# open-climpr - Deploy Landing Zone
 
 <!-- TOC -->
 
-- [Climpr - Deploy Landing Zone](#climpr---deploy-landing-zone)
-  - [Goals](#goals)
-  - [Non-Goals](#non-goals)
-  - [Getting started](#getting-started)
-    - [How to use this action](#how-to-use-this-action)
-  - [Structure](#structure)
-    - [High level](#high-level)
-    - [Landing Zones](#landing-zones)
-    - [Archetypes](#archetypes)
-    - [Landing Zone definitions](#landing-zone-definitions)
+- [open-climpr - Deploy Landing Zone](#open-climpr---deploy-landing-zone)
+    - [Goals](#goals)
+    - [Non-Goals](#non-goals)
+    - [Getting started](#getting-started)
+        - [How to use this action](#how-to-use-this-action)
+    - [Structure](#structure)
+        - [High level](#high-level)
+        - [Landing Zones](#landing-zones)
+        - [Archetypes](#archetypes)
+        - [Landing Zone definitions](#landing-zone-definitions)
 
 <!-- /TOC -->
 
@@ -39,7 +39,7 @@ To use this action, you need to follow the steps below:
 4. Validate and update the `lz-management/climprconfig.json` configuration file to reflect your desired configuration.
 5. Create the archetypes you need and place them in the `lz-management/archetypes` directory.
 6. Create a GitHub app (TODO: Insert instructions)
-7. Create a User Assigned Managed Identity for the solution. (You can use the [Climpr Bicep Deployment module](https://github.com/climpr/deploy-bicep/) for this.)
+7. Create a User Assigned Managed Identity for the solution. (You can use the [open-climpr Bicep Deployment module](https://github.com/open-climpr/deploy-bicep/) for this.)
 8. In GitHub, create the environment and upload the variables and secrets referenced in the `.github/workflows/deploy-landing-zones.yaml` file.
 9. You are good to go...
 
@@ -76,9 +76,9 @@ steps:
       subscription-id: ${{ vars.SUBSCRIPTION_ID }}
 
   - name: Set up Landing Zone
-    uses: climpr/deploy-landing-zone@v1
+    uses: open-climpr/deploy-landing-zone@v1
     with:
-      solution-path: <Path to the Climpr Landing Zones solution directory.>
+      solution-path: <Path to the open-climpr Landing Zones solution directory.>
       landing-zone-path: <Landing Zone directory path.>
       archetypes-path: <Archetypes path.>
       root-landing-zones-path: <Root path for all Landing Zones.>
@@ -102,7 +102,7 @@ The repository is structured as follows:
 
 ### Landing Zones
 
-In Climpr a Landing Zone is defined as a GitHub repository connected to one or more Azure subscriptions. One for each specified environment. Each specific Azure subscription is called a Landing Zone Environment instance.
+In open-climpr a Landing Zone is defined as a GitHub repository connected to one or more Azure subscriptions. One for each specified environment. Each specific Azure subscription is called a Landing Zone Environment instance.
 
 Each Landing Zone Environment instance consists of:
 
@@ -127,7 +127,7 @@ To simplify the development, they all use common Bicep modules located in the `.
 
 ### Landing Zone definitions
 
-The structure supports grouping landing zones in a directory structure to provide necessary type separation and organization for landing zones. How to structure this is all up to you, but by default, Climpr implements:
+The structure supports grouping landing zones in a directory structure to provide necessary type separation and organization for landing zones. How to structure this is all up to you, but by default, open-climpr implements:
 
 - `platform`: Platform Landing Zones according to the [Azure Enterprise Scale Landing Zones](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/landing-zone/)
 - `application`: Application Landing Zones according to the [Azure Enterprise Scale Landing Zones](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/landing-zone/)
