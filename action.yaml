@@ -50,11 +50,25 @@ runs:
         git config user.name github-actions
         git config user.email github-actions@github.com
 
-    - name: Install PS Modules
-      uses: open-climpr/install-psmodules@v1
+    - name: Get Latest Module Version
+      id: get-version
+      shell: pwsh
+      run: |
+        $module = Find-PSResource -Name "Az.Subscription" -ErrorAction Stop
+        Add-Content -Path $env:GITHUB_OUTPUT -Value "latest=$($module.Version.ToString())"
+
+    - name: Cache PS Modules
+      id: cache-psmodules
+      uses: actions/cache@v5
       with:
-        modules: |
-          Az.Subscription
+        path: ~/.local/share/powershell/modules/Az.Subscription/${{ steps.get-version.outputs.latest }}
+        key: psmodules-Az.Subscription-${{ steps.get-version.outputs.latest }}
+
+    - name: Install PS Modules
+      if: steps.cache-psmodules.outputs.cache-hit != 'true'
+      shell: pwsh
+      run: |
+        Install-PSResource -Name "Az.Subscription" -Version "${{ steps.get-version.outputs.latest }}" -TrustRepository -Confirm:$false -WarningAction Ignore
 
     - name: Install and configure Bicep version
       if: ${{ inputs.bicep-version != 'default' }}
