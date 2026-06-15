@@ -54,7 +54,6 @@ runs:
       uses: open-climpr/install-psmodules@v1
       with:
         modules: |
-          Az.ManagementPartner
           Az.Subscription
 
     - name: Install and configure Bicep version
@@ -107,13 +106,6 @@ runs:
 
           echo "::group::Installed PowerShell modules"
           Get-Module -ListAvailable | Format-Table Name, Version, PSEdition
-          echo "::endgroup::"
-
-          #* Set-PartnerId.ps1
-          echo "::group::Set-PartnerId"
-
-          & "$($env:actionPath)/src/Set-PartnerId.ps1" -PartnerId "6100086"
-
           echo "::endgroup::"
 
           #* Deploy-GitHubRepository.ps1
