@@ -92,7 +92,7 @@ runs:
         az config set bicep.use_binary_from_path=true
 
     - name: Process Landing Zone
-      uses: azure/powershell@v2
+      uses: azure/powershell@v3
       id: process-landing-zone
       env:
         solutionPath: ${{ inputs.solution-path }}
