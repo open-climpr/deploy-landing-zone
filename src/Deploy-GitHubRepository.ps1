@@ -108,18 +108,25 @@ if (!$lzConfig.decommissioned) {
         $description = $defaultTeamConfig.descriptionPrefix + ($defaultTeamConfig.descriptionIncludeLzName ? $repo : "") + $defaultTeamConfig.descriptionSuffix
         $lzTeamSlug = $lzTeamName.replace(" ", "-").ToLower()
         
-        #* Create Github Team
-        try {
-            $body = @{
-                name        = $lzTeamName
-                description = $description
-            }
-
-            Invoke-GitHubCliApiMethod -Method "PUT" -Uri "/orgs/$org/teams" -Body ($body | ConvertTo-Json) | Out-Null
-            Write-Host "- Created GitHub team [$lzTeamName]." 
+        #* Create Github Team (idempotent: GitHub 'Create a team' is POST, and re-runs must
+        #* not fail when the team already exists)
+        $existingTeam = Invoke-GitHubCliApiMethod -Method "GET" -Uri "/orgs/$org/teams/$lzTeamSlug" -ErrorAction Ignore 2>$null
+        if ($existingTeam) {
+            Write-Host "- GitHub team [$lzTeamName] already exists."
         }
-        catch {
-            Write-Error "Failed to create GitHub team [$lzTeamName]. GitHub Api response: $($_.Exception)" 
+        else {
+            try {
+                $body = @{
+                    name        = $lzTeamName
+                    description = $description
+                }
+
+                Invoke-GitHubCliApiMethod -Method "POST" -Uri "/orgs/$org/teams" -Body ($body | ConvertTo-Json) | Out-Null
+                Write-Host "- Created GitHub team [$lzTeamName]."
+            }
+            catch {
+                Write-Error "Failed to create GitHub team [$lzTeamName]. GitHub Api response: $($_.Exception)"
+            }
         }
 
         if ($defaultTeamConfig.syncWithEntraId) {
