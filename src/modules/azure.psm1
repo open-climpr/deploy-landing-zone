@@ -119,7 +119,11 @@ function New-LzSubscription {
         Write-Host "- Set subscription parent management group Id [$ManagementGroupId]"
         $null = New-AzManagementGroupSubscription -GroupId $ManagementGroupId -SubscriptionId $SubscriptionId
 
-        if ($BillingScope) {
+        #* MCA only: verify the subscription belongs to the Billing Account and move it to the
+        #* correct invoice section. Skipped for EA (enrollmentAccounts) scopes, which have no
+        #* invoice-section move and where listing billing subscriptions requires a billing-account
+        #* read permission the subscription-creator identity may not hold (returns 403).
+        if ($BillingScope -and $BillingScope -notlike "*/enrollmentAccounts/*") {
             #* Check if subscription is associated with the Billing Account
             #* If not, it cannot be moved to the correct billing scope
             $billingAccountId = $BillingScope.Split("/")[0..4] -join "/"
@@ -141,17 +145,15 @@ function New-LzSubscription {
             if ($billingSubscriptions.properties.subscriptionId -notcontains $SubscriptionId) {
                 throw "Subscription either doesn't exist or is not associated with the correct Billing Account. The subscription must exist and be associated with the Billing Account as a 'Billing Subscription'."
             }
-            
-            #* Ensure subscription has correct invoice section, as long as billingScope is not an Enterprise Agreement (EA) account
-            if ($BillingScope -notlike "*/enrollmentAccounts/*") {
-                Write-Host "- Set subscription billing invoice section (Only for MCA)"
-                $uri = "https://management.azure.com$($billingAccountId)/billingSubscriptions/$($SubscriptionId)/move?api-version=2021-10-01"
-                $body = @{ destinationInvoiceSectionId = $BillingScope } | ConvertTo-Json
-                $response = Invoke-AzRestMethod -Uri $uri -Method POST -Payload $body
-                if ($response.StatusCode -notin 200..299) {
-                    Write-Host ($response | Out-String)
-                    throw "Failed to move subscription to invoice section. Status code: {0}. Error: {1}" -f $response.StatusCode, $response.Content
-                }
+
+            #* Ensure subscription has correct invoice section (MCA)
+            Write-Host "- Set subscription billing invoice section (Only for MCA)"
+            $uri = "https://management.azure.com$($billingAccountId)/billingSubscriptions/$($SubscriptionId)/move?api-version=2021-10-01"
+            $body = @{ destinationInvoiceSectionId = $BillingScope } | ConvertTo-Json
+            $response = Invoke-AzRestMethod -Uri $uri -Method POST -Payload $body
+            if ($response.StatusCode -notin 200..299) {
+                Write-Host ($response | Out-String)
+                throw "Failed to move subscription to invoice section. Status code: {0}. Error: {1}" -f $response.StatusCode, $response.Content
             }
         }
 
