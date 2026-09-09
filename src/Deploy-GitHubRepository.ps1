@@ -13,7 +13,15 @@ param (
     [Parameter(Mandatory)]
     [ValidateScript({ $_ | Test-Path -PathType Container })]
     [string]
-    $SolutionPath
+    $SolutionPath,
+
+    #* Opt-in. Resolves the numeric GitHub owner and repository IDs once the repository exists and
+    #* writes them into each environment's .bicepparam, so an archetype that builds the immutable
+    #* OIDC subject has them available on the FIRST deployment. Off by default: the parameter file
+    #* contract belongs to the consumer, not to this action.
+    [Parameter()]
+    [switch]
+    $ResolveRepositoryIds
 )
 
 Write-Debug "Deploy-GitHubRepository.ps1: Started"
@@ -88,6 +96,117 @@ if (!$lzConfig.decommissioned) {
                 --add-readme `
                 --private `
                 --description ($lzConfig.repoDescription ? $lzConfig.repoDescription : 'Automatically created by Climpr.')
+        }
+    }
+
+    #endregion
+
+    ##################################
+    ###* MARK: Resolve numeric GitHub IDs
+    ##################################
+    #region
+
+    #* GitHub issues two shapes of OIDC subject claim. The name-based one:
+    #*
+    #*   repo:my-org/my-repo:environment:prod:workflow:Deploy
+    #*
+    #* and the immutable one, which embeds the numeric owner and repository IDs:
+    #*
+    #*   repo:my-org@123456/my-repo@7890123:environment:prod:workflow:Deploy
+    #*
+    #* Repositories created, renamed or transferred after 2026-07-15 emit the immutable form with
+    #* no way to opt out, and a credential built for one shape is rejected with AADSTS700213 when
+    #* the token carries the other.
+    #*
+    #* An archetype can only build the immutable credential if the numeric IDs reach it through the
+    #* .bicepparam, and a NEW Landing Zone cannot carry them: the repository does not exist until
+    #* the block above creates it. Resolving them here - after creation, before
+    #* Deploy-AzureLandingZone.ps1 compiles the parameter file from disk - is what lets the
+    #* immutable credential exist after the first deployment rather than the second.
+    if ($ResolveRepositoryIds) {
+        Write-Host "Resolve numeric GitHub IDs"
+
+        $ids = $null
+        #* A repository created moments ago is not always immediately queryable, so a single
+        #* failure here is not conclusive. This is the only plausible transient failure in this
+        #* flow, and it is precisely the one this feature walks into.
+        foreach ($attempt in 1..3) {
+            #* NOT 'gh repo view --json id': that returns the GraphQL node id (R_kgDO...), while
+            #* the OIDC subject carries the numeric id. The REST endpoint returns the repository
+            #* and owner ids together, so one call covers both.
+            $idJson = gh api "repos/$org/$repo" --jq '{repositoryId: .id, organizationId: .owner.id}' 2>$null
+            if ($LASTEXITCODE -eq 0 -and $idJson) {
+                $candidate = $idJson | ConvertFrom-Json
+                if ($candidate.repositoryId -and $candidate.organizationId) {
+                    $ids = $candidate
+                    break
+                }
+            }
+            if ($attempt -lt 3) {
+                Write-Host "- Could not resolve IDs for [$org/$repo] (attempt $attempt). Retrying."
+                Start-Sleep -Seconds (2 * $attempt)
+            }
+        }
+
+        #* Deliberately fatal. Nothing legitimate reaches this: the repository demonstrably exists,
+        #* because this script has just viewed or created it. Continuing would deploy an archetype
+        #* that silently builds only the name-based credential - the exact defect this resolves -
+        #* on every flaky API call rather than once.
+        if (!$ids) {
+            throw "Could not resolve the numeric GitHub IDs for [$org/$repo] after 3 attempts. The archetype would deploy without them and build only a name-based federated credential."
+        }
+
+        Write-Host "- Resolved organizationId [$($ids.organizationId)] repositoryId [$($ids.repositoryId)]"
+
+        foreach ($environment in @($lzConfig.environments)) {
+            $parameterFile = Join-Path -Path $LandingZonePath -ChildPath "$($environment.name).bicepparam"
+            if (!(Test-Path -Path $parameterFile)) {
+                continue
+            }
+
+            $content = Get-Content -Raw -Path $parameterFile -Encoding utf8
+
+            #* No-op rather than an error when there is nothing to write into. 'gitInfo' is a
+            #* consumer-owned parameter: a consumer may name it differently or not have one, and
+            #* this action must not fail them for that.
+            $block = [regex]::Match($content, "param gitInfo\s*=\s*\{(?<body>.*?)\r?\n\}", "Singleline")
+            if (!$block.Success) {
+                Write-Host "- [$($environment.name)] no 'param gitInfo' block. Skipping."
+                continue
+            }
+
+            $body = $block.Groups["body"].Value
+            $newBody = $body
+
+            foreach ($field in @(
+                    @{ Anchor = "organization"; Name = "organizationId"; Value = $ids.organizationId }
+                    @{ Anchor = "repository"; Name = "repositoryId"; Value = $ids.repositoryId }
+                )) {
+                #* Already present wins. A consumer that pins the value by hand keeps it.
+                if ($newBody -match "(?m)^[ \t]*$($field.Name)[ \t]*:") {
+                    continue
+                }
+                #* [ \t]* rather than \s*: \s matches newlines, so the indent group swallows the
+                #* preceding line break and the inserted line comes out separated by a blank line.
+                #* The anchor cannot collide with the field it introduces - 'organization[ \t]*:'
+                #* does not match 'organizationId:', because 'I' follows 'organization' there.
+                $anchor = "(?m)^(?<indent>[ \t]*)$($field.Anchor)[ \t]*:[ \t]*'(?<value>[^']*)'[ \t]*$"
+                if ($newBody -notmatch $anchor) {
+                    continue
+                }
+                $newBody = [regex]::Replace($newBody, $anchor, "`${0}`n`${indent}$($field.Name): '$($field.Value)'")
+            }
+
+            if ($newBody -eq $body) {
+                Write-Host "- [$($environment.name)] IDs already present. No change."
+                continue
+            }
+
+            $updated = $content.Remove($block.Groups["body"].Index, $block.Groups["body"].Length).Insert($block.Groups["body"].Index, $newBody)
+            #* -NoNewline with -Raw round-trips the file exactly. Without it every write appends a
+            #* newline, so a file that already ended with one grows by a blank line each run.
+            Set-Content -Path $parameterFile -Value $updated -Encoding utf8 -NoNewline
+            Write-Host "- [$($environment.name)] wrote IDs into $(Split-Path -Leaf $parameterFile)."
         }
     }
 

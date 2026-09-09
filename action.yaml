@@ -36,6 +36,19 @@ inputs:
     description: The token for the GitHub app that is allowed to create and update repositories in the organization.
     required: true
 
+  resolve-repository-ids:
+    description: >-
+      Resolve the numeric GitHub owner and repository IDs once the repository exists and write them
+      into each environment's .bicepparam as gitInfo.organizationId and gitInfo.repositoryId,
+      before the archetype is deployed. Enable this if your archetype builds the immutable OIDC
+      subject (repo:org@ownerId/repo@repoId:...), which GitHub emits with no opt-out for
+      repositories created, renamed or transferred after 2026-07-15. Without it a newly created
+      Landing Zone gets only a name-based federated credential on its first deployment, because
+      the repository has no ID until this action creates it. No-ops where a parameter file has no
+      'param gitInfo' block, and never overwrites an ID already present.
+    default: "false"
+    required: false
+
 outputs:
   new-landing-zone-path:
     description: The new Landing Zone directory path
@@ -103,6 +116,7 @@ runs:
         actionPath: ${{ github.action_path }}
         GH_TOKEN: ${{ inputs.github-token }}
         debug: ${{ runner.debug }}
+        resolveRepositoryIds: ${{ inputs.resolve-repository-ids }}
       with:
         azPSVersion: ${{ inputs.az-ps-version }}
         inlineScript: |
@@ -126,8 +140,9 @@ runs:
           echo "::group::Deploy-GitHubRepository"
 
           $param = @{
-            LandingZonePath = $env:landingZonePath
-            SolutionPath    = $env:solutionPath
+            LandingZonePath      = $env:landingZonePath
+            SolutionPath         = $env:solutionPath
+            ResolveRepositoryIds = $env:resolveRepositoryIds -eq 'true'
           }
           & "$($env:actionPath)/src/Deploy-GitHubRepository.ps1" @param
 

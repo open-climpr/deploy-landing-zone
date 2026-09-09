@@ -86,8 +86,33 @@ steps:
       az-ps-version: <The version of Az PS modules to install.>
       bicep-version: <The version of Bicep to install.>
       github-token: <The token for the GitHub app that is allowed to create and update repositories in the organization.>
+      resolve-repository-ids: <Optional. Write the numeric GitHub IDs into each .bicepparam before deploying. Default false.>
 # ...
 ```
+
+#### `resolve-repository-ids`
+
+Off by default. Enable it if your archetype builds the **immutable** OIDC subject, which embeds the
+numeric owner and repository IDs:
+
+```
+repo:my-org@123456/my-repo@7890123:environment:prod:workflow:Deploy
+```
+
+GitHub emits that shape, with no way to opt out, for repositories created, renamed or transferred
+after 2026-07-15. A federated credential built for the name-based shape is rejected with
+`AADSTS700213` when the token carries this one.
+
+A newly created Landing Zone cannot carry those IDs in its `.bicepparam`, because the repository
+does not exist until this action creates it — so without this input the first deployment builds a
+name-based credential only. With it, the action resolves both IDs once the repository exists and
+writes them into each environment's parameter file as `gitInfo.organizationId` and
+`gitInfo.repositoryId` before the archetype is deployed, so the immutable credential exists after
+the first deployment.
+
+It no-ops where a parameter file has no `param gitInfo` block, and never overwrites an ID that is
+already present. Your archetype's `gitInfo` type must declare the two properties for them to take
+effect; if it does not, Bicep reports `BCP037` as a warning and the values are ignored.
 
 ## Structure
 
