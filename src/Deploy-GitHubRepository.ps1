@@ -71,7 +71,30 @@ if (!$lzConfig.decommissioned) {
 
     #* Check if the repository already exists
     Write-Host "- Check if the repository already exists '$repo'"
-    $repoInfo = gh repo view $org/$repo --json "name,isArchived" | ConvertFrom-Json
+    #* gh exits non-zero both when the repository does not exist and when the call itself failed,
+    #* and writes nothing to stdout either way. Piping straight into ConvertFrom-Json cannot tell
+    #* those apart: an empty pipeline means ConvertFrom-Json never runs, so $repoInfo is $null with
+    #* no error raised, and the 'else' below then tries to CREATE a repository that already exists.
+    #* That failure is unchecked too, so the run continues on to configure teams, branch protection
+    #* and environments against a repository this script believes it just created.
+    #*
+    #* Only "does not exist" may fall through to creation. Anything else has to stop.
+    $repoViewStdErr = New-TemporaryFile
+    $repoViewJson = gh repo view $org/$repo --json "name,isArchived" 2>$repoViewStdErr
+    $repoViewExitCode = $LASTEXITCODE
+    $repoViewError = (Get-Content -Raw -Path $repoViewStdErr -ErrorAction SilentlyContinue) ?? ""
+    Remove-Item -Path $repoViewStdErr -Force -ErrorAction SilentlyContinue
+
+    if ($repoViewExitCode -eq 0 -and $repoViewJson) {
+        $repoInfo = $repoViewJson | ConvertFrom-Json
+    }
+    elseif ($repoViewError -match "Could not resolve to a Repository|GraphQL: Could not resolve") {
+        $repoInfo = $null
+    }
+    else {
+        throw "Could not determine whether [$org/$repo] exists: 'gh repo view' exited $repoViewExitCode. $($repoViewError.Trim())"
+    }
+
     if ($repoInfo) {
         Write-Host "- Found GitHub repository'$repo'"
     }
