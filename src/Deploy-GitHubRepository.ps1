@@ -463,11 +463,90 @@ if (!$lzConfig.decommissioned) {
     }
 
     try {
-        Invoke-GitHubCliApiMethod -Method "PATCH" -Uri "/repos/$org/$repo" -Body ($body | ConvertTo-Json) | Out-Null
-        Write-Host "GitHub repository settings applied." 
+        #* The response is the full repository object. Kept rather than discarded because it
+        #* carries the numeric repository and owner ids - see the next region.
+        $repositoryDetails = Invoke-GitHubCliApiMethod -Method "PATCH" -Uri "/repos/$org/$repo" -Body ($body | ConvertTo-Json)
+        Write-Host "GitHub repository settings applied."
     }
     catch {
         Write-Error "Unable to apply GitHub repository settings. GitHub Api response: $($_.Exception)"
+    }
+
+    #endregion
+
+    ##################################
+    ###* MARK: Record the numeric GitHub IDs
+    ##################################
+    #region
+
+    Write-Host "Record the numeric GitHub IDs"
+
+    #* See Set-GitInfoIds for what the ids are for and why they are reconciled rather than kept.
+    #*
+    #* Recorded here because a NEW Landing Zone cannot carry them: the repository does not exist
+    #* until this script creates it, so GitHub has not assigned an id yet. Writing them before
+    #* Deploy-AzureLandingZone.ps1 compiles the parameter file from disk is what lets the immutable
+    #* credential exist after the first deployment rather than the second.
+    $recordedFiles = @()
+
+    if (!$repositoryDetails.id -or !$repositoryDetails.owner.id) {
+        #* Only reachable when the settings PATCH above failed. Ids already recorded in the
+        #* parameter files stay as they are, so the archetype deploys against the last known-good
+        #* pair rather than against none.
+        Write-Warning "Skipping. The GitHub repository settings response carried no ids. Any ids already recorded are left untouched."
+    }
+    else {
+        foreach ($environment in @($lzConfig.environments)) {
+            if ($environment.decommissioned) {
+                continue
+            }
+
+            $parameterFile = Join-Path -Path $LandingZonePath -ChildPath "$($environment.name).bicepparam"
+            if (!(Test-Path -Path $parameterFile)) {
+                #* An environment without an Azure deployment has no parameter file, by design.
+                if ($environment.azure) {
+                    Write-Warning "Unable to record GitHub IDs for environment [$($environment.name)]: no [$($environment.name).bicepparam] file found."
+                }
+                continue
+            }
+
+            $param = @{
+                Path           = $parameterFile
+                OrganizationId = $repositoryDetails.owner.id
+                RepositoryId   = $repositoryDetails.id
+            }
+            switch (Set-GitInfoIds @param) {
+                "Recorded" {
+                    $recordedFiles += (Resolve-Path -Relative -Path $parameterFile)
+                    Write-Host "- Recorded GitHub IDs in [$($environment.name).bicepparam]."
+                }
+                "UpToDate" {
+                    Write-Host "- Skipping [$($environment.name).bicepparam]. GitHub IDs already up to date."
+                }
+                "NoGitInfoBlock" {
+                    Write-Host "- Skipping [$($environment.name).bicepparam]. No 'param gitInfo' block to record the IDs in."
+                }
+            }
+        }
+    }
+
+    #* Committed so the ids outlive the runner. The parameter file then compiles standalone in a
+    #* consumer's own validation and in a local deployment, the recorded ids are reviewable in a
+    #* diff, and a later run whose settings PATCH fails falls back to the last known-good pair
+    #* instead of deploying the archetype without any ids at all.
+    if ($recordedFiles) {
+        git add $recordedFiles
+        #* Committed before pulling: 'git pull' onto a working tree carrying these edits fails as
+        #* soon as the remote has touched the same files.
+        git commit -qm "[skip ci] Record GitHub IDs in Landing Zone parameter files"
+        git pull -q --rebase
+        git push -q
+        if ($?) {
+            Write-Host "Pushed recorded GitHub IDs."
+        }
+        else {
+            Write-Error "Unable to push recorded GitHub IDs. The archetype still deploys against the ids recorded on this runner, but they are not persisted."
+        }
     }
 
     #endregion
