@@ -138,3 +138,27 @@ Each Landing Zone has a dedicated directory under the desired root directory `lz
 A Landing Zone is defined by a file called: `metadata.json`. This file contains the definition of the Landing Zone, both GitHub properties and Azure properties.
 
 For any Landing Zone with an Azure environment, a `.bicepparam` file must be made for each environment. The file must be named: `<environment>.bicepparam`. For example: `prod.bicepparam`. The `.bicepparam` must be linked to the archetype `main.bicep` file with the `using` statement.
+
+#### Numeric GitHub IDs
+
+If a `.bicepparam` contains a `param gitInfo` block, the action records the numeric GitHub owner and repository IDs in it as `organizationId` and `repositoryId`, once the repository exists and before the archetype is deployed:
+
+```bicep
+param gitInfo = {
+  organization: 'my-org'
+  organizationId: '123456'
+  repository: 'my-repo'
+  repositoryId: '7890123'
+  environment: 'prod'
+}
+```
+
+This exists so an archetype can build a federated credential for the **immutable** OIDC subject, which embeds those IDs:
+
+```
+repo:my-org@123456/my-repo@7890123:environment:prod:workflow:Deploy
+```
+
+GitHub emits that shape, with no way to opt out, for repositories created, renamed or transferred after 2026-07-15, and a credential built for the name-based shape is rejected with `AADSTS700213` once the token carries it. A newly created Landing Zone cannot carry the IDs itself, because the repository does not exist until this action creates it — so without this the first deployment can only build a name-based credential.
+
+The values are only used if your archetype's `gitInfo` type declares the two properties. If it does not, Bicep reports `BCP037` as a warning and ignores them. An ID already present is never overwritten, and a parameter file with no `param gitInfo` block is left alone.
