@@ -481,15 +481,11 @@ if (!$lzConfig.decommissioned) {
 
     Write-Host "Record the numeric GitHub IDs"
 
-    #* GitHub emits an immutable OIDC subject - repo:org@ownerId/repo@repoId:environment:... - for
-    #* repositories created, renamed or transferred after 2026-07-15, with no way to opt out. A
-    #* federated credential built for the name-based shape is rejected with AADSTS700213 once the
-    #* token carries that one.
+    #* See Set-GitInfoIds for what the ids are for and why they are reconciled rather than kept.
     #*
-    #* An archetype can only build a credential matching it if the numeric ids reach it through the
-    #* .bicepparam, and a NEW Landing Zone cannot carry them: the repository does not exist until
-    #* this script creates it, so GitHub has not assigned an id yet. Recording them here - before
-    #* Deploy-AzureLandingZone.ps1 compiles the parameter file from disk - is what lets that
+    #* Recorded here because a NEW Landing Zone cannot carry them: the repository does not exist
+    #* until this script creates it, so GitHub has not assigned an id yet. Writing them before
+    #* Deploy-AzureLandingZone.ps1 compiles the parameter file from disk is what lets the immutable
     #* credential exist after the first deployment rather than the second.
     $recordedFiles = @()
 
