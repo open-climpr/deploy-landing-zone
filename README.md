@@ -161,4 +161,10 @@ repo:my-org@123456/my-repo@7890123:environment:prod:workflow:Deploy
 
 GitHub emits that shape, with no way to opt out, for repositories created, renamed or transferred after 2026-07-15, and a credential built for the name-based shape is rejected with `AADSTS700213` once the token carries it. A newly created Landing Zone cannot carry the IDs itself, because the repository does not exist until this action creates it — so without this the first deployment can only build a name-based credential.
 
-The values are only used if your archetype's `gitInfo` type declares the two properties. If it does not, Bicep reports `BCP037` as a warning and ignores them. An ID already present is never overwritten, and a parameter file with no `param gitInfo` block is left alone.
+The values are only used if your archetype's `gitInfo` type declares the two properties. If it does not, Bicep reports `BCP037` as a warning and ignores them.
+
+**The IDs are not configurable.** They are reconciled on every deployment to whatever the GitHub API reports, because they have to match the values GitHub puts in the token's subject claim — an ID that says anything else authenticates as some other repository. A value already in the file is replaced, not preserved, so a repository that is renamed or transferred, and a parameter file copied from another Landing Zone, both correct themselves on the next run.
+
+Changed files are committed back to the solution repository with `[skip ci]`, so the recorded IDs survive the runner: the `.bicepparam` then compiles standalone in your own validation and in a local deployment, the IDs are reviewable in a diff, and a run whose GitHub API call fails falls back to the last recorded pair rather than deploying with none.
+
+A parameter file with no `param gitInfo` block is left alone. Everything else is reported in the deployment log — if the action cannot record the IDs for an environment that has an Azure deployment, it says so.

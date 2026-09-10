@@ -465,7 +465,7 @@ if (!$lzConfig.decommissioned) {
     try {
         #* The response is the full repository object. Kept rather than discarded because it
         #* carries the numeric repository and owner ids - see the next region.
-        $repositorySettings = Invoke-GitHubCliApiMethod -Method "PATCH" -Uri "/repos/$org/$repo" -Body ($body | ConvertTo-Json)
+        $repositoryDetails = Invoke-GitHubCliApiMethod -Method "PATCH" -Uri "/repos/$org/$repo" -Body ($body | ConvertTo-Json)
         Write-Host "GitHub repository settings applied."
     }
     catch {
@@ -479,6 +479,8 @@ if (!$lzConfig.decommissioned) {
     ##################################
     #region
 
+    Write-Host "Record the numeric GitHub IDs"
+
     #* GitHub emits an immutable OIDC subject - repo:org@ownerId/repo@repoId:environment:... - for
     #* repositories created, renamed or transferred after 2026-07-15, with no way to opt out. A
     #* federated credential built for the name-based shape is rejected with AADSTS700213 once the
@@ -489,52 +491,65 @@ if (!$lzConfig.decommissioned) {
     #* this script creates it, so GitHub has not assigned an id yet. Recording them here - before
     #* Deploy-AzureLandingZone.ps1 compiles the parameter file from disk - is what lets that
     #* credential exist after the first deployment rather than the second.
-    if ($repositorySettings.id -and $repositorySettings.owner.id) {
+    $recordedFiles = @()
+
+    if (!$repositoryDetails.id -or !$repositoryDetails.owner.id) {
+        #* Only reachable when the settings PATCH above failed. Ids already recorded in the
+        #* parameter files stay as they are, so the archetype deploys against the last known-good
+        #* pair rather than against none.
+        Write-Warning "Skipping. The GitHub repository settings response carried no ids. Any ids already recorded are left untouched."
+    }
+    else {
         foreach ($environment in @($lzConfig.environments)) {
+            if ($environment.decommissioned) {
+                continue
+            }
+
             $parameterFile = Join-Path -Path $LandingZonePath -ChildPath "$($environment.name).bicepparam"
             if (!(Test-Path -Path $parameterFile)) {
-                continue
-            }
-
-            $parameterContent = Get-Content -Raw -Path $parameterFile -Encoding utf8
-            #* 'gitInfo' is a consumer-owned parameter: a consumer may name it differently, or not
-            #* have one. Nothing to write into is a no-op, not an error.
-            $gitInfoBlock = [regex]::Match($parameterContent, "param gitInfo\s*=\s*\{(?<body>.*?)\r?\n\}", "Singleline")
-            if (!$gitInfoBlock.Success) {
-                continue
-            }
-
-            $gitInfo = $gitInfoBlock.Groups["body"].Value
-            $updatedGitInfo = $gitInfo
-
-            foreach ($field in @(
-                    @{ Anchor = "organization"; Name = "organizationId"; Value = $repositorySettings.owner.id }
-                    @{ Anchor = "repository"; Name = "repositoryId"; Value = $repositorySettings.id }
-                )) {
-                #* An id already present wins, so a consumer pinning one by hand keeps it.
-                if ($updatedGitInfo -match "(?m)^[ \t]*$($field.Name)[ \t]*:") {
-                    continue
+                #* An environment without an Azure deployment has no parameter file, by design.
+                if ($environment.azure) {
+                    Write-Warning "Unable to record GitHub IDs for environment [$($environment.name)]: no [$($environment.name).bicepparam] file found."
                 }
-                #* [ \t]* rather than \s*: \s matches newlines too, so the indent group would
-                #* swallow the preceding line break and the inserted line would come out separated
-                #* by a blank line. The anchor cannot match the field it introduces, because
-                #* 'organization[ \t]*:' does not match 'organizationId:'.
-                $anchor = "(?m)^(?<indent>[ \t]*)$($field.Anchor)[ \t]*:[ \t]*'[^']*'[ \t]*$"
-                if ($updatedGitInfo -notmatch $anchor) {
-                    continue
-                }
-                $updatedGitInfo = [regex]::Replace($updatedGitInfo, $anchor, "`${0}`n`${indent}$($field.Name): '$($field.Value)'")
-            }
-
-            if ($updatedGitInfo -eq $gitInfo) {
                 continue
             }
 
-            #* -NoNewline against -Raw round-trips the file exactly. Without it every run appends a
-            #* newline, so a file that already ended with one grows a blank line each time.
-            $updatedContent = $parameterContent.Remove($gitInfoBlock.Groups["body"].Index, $gitInfoBlock.Groups["body"].Length).Insert($gitInfoBlock.Groups["body"].Index, $updatedGitInfo)
-            Set-Content -Path $parameterFile -Value $updatedContent -Encoding utf8 -NoNewline
-            Write-Host "- Recorded GitHub IDs in [$($environment.name).bicepparam]."
+            $param = @{
+                Path           = $parameterFile
+                OrganizationId = $repositoryDetails.owner.id
+                RepositoryId   = $repositoryDetails.id
+            }
+            switch (Set-GitInfoIds @param) {
+                "Recorded" {
+                    $recordedFiles += (Resolve-Path -Relative -Path $parameterFile)
+                    Write-Host "- Recorded GitHub IDs in [$($environment.name).bicepparam]."
+                }
+                "UpToDate" {
+                    Write-Host "- Skipping [$($environment.name).bicepparam]. GitHub IDs already up to date."
+                }
+                "NoGitInfoBlock" {
+                    Write-Host "- Skipping [$($environment.name).bicepparam]. No 'param gitInfo' block to record the IDs in."
+                }
+            }
+        }
+    }
+
+    #* Committed so the ids outlive the runner. The parameter file then compiles standalone in a
+    #* consumer's own validation and in a local deployment, the recorded ids are reviewable in a
+    #* diff, and a later run whose settings PATCH fails falls back to the last known-good pair
+    #* instead of deploying the archetype without any ids at all.
+    if ($recordedFiles) {
+        git add $recordedFiles
+        #* Committed before pulling: 'git pull' onto a working tree carrying these edits fails as
+        #* soon as the remote has touched the same files.
+        git commit -qm "[skip ci] Record GitHub IDs in Landing Zone parameter files"
+        git pull -q --rebase
+        git push -q
+        if ($?) {
+            Write-Host "Pushed recorded GitHub IDs."
+        }
+        else {
+            Write-Error "Unable to push recorded GitHub IDs. The archetype still deploys against the ids recorded on this runner, but they are not persisted."
         }
     }
 
