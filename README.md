@@ -137,7 +137,7 @@ Each Landing Zone has a dedicated directory under the desired root directory `lz
 
 A Landing Zone is defined by a file called: `metadata.json`. This file contains the definition of the Landing Zone, both GitHub properties and Azure properties.
 
-Repositories are identified by `repoId` in `metadata.json` whenever it is present. Without a repository ID, the action finds or creates the repository by name. With an ID present, changing `repoName` renames the existing repository. An ID that cannot be resolved fails the operation; it does not create a replacement repository. Repositories must remain in the configured `organization`.
+Repositories are identified by `repoId` in `metadata.json` whenever it is present. Without a repository ID, the action finds or creates the repository by name and resolves its ID. Repository API requests then use `/repositories/{id}`, including when metadata backfill is disabled. Team permissions use GitHub's owner/name endpoint with the resolved repository name. Changing `repoName` renames the identified repository. An ID that cannot be resolved fails the operation; it does not create a replacement repository. Repositories must remain in the configured `organization`.
 
 Set `lzManagement.backfillRepositoryIds` to `true` in `climprconfig.json` to record `repoId` and the owner's `organizationId` in `metadata.json` and commit and push that file with `[skip ci]`. A missing or outdated owner ID is also updated. Omitted or `false` disables these metadata writes; it does not affect repository matching.
 

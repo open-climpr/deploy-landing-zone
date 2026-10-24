@@ -64,27 +64,12 @@ if (!$lzConfig.decommissioned) {
 
     #* Check if the repository already exists
     Write-Host "- Check if the repository already exists '$repo'"
-    if ($lzConfig.repoId) {
-        $repoInfo = Invoke-GitHubCliApiMethod -Method "GET" -Uri "/repositories/$($lzConfig.repoId)" -ErrorAction Stop
-        if ($repoInfo.owner.login -ine $org) {
-            throw "Repository [$($lzConfig.repoId)] does not belong to organization [$org]."
-        }
-        $repo = $repoInfo.name
-    }
-    else {
-        $repoInfo = gh repo view $org/$repo --json "name,isArchived" | ConvertFrom-Json
-    }
+    $repoInfo = Get-GitHubRepository -Organization $org -Repository $repo -RepositoryId $lzConfig.repoId -AllowMissing
     if ($repoInfo) {
         Write-Host "- Found GitHub repository'$repo'"
     }
 
-    if ($repoInfo) {
-        if ($repoInfo.isArchived -or $repoInfo.archived) {
-            Write-Host "- Unarchiving repository"
-            gh repo unarchive $org/$repo --yes
-        }
-    }
-    else {
+    if (!$repoInfo) {
         if ($lzConfig.repoTemplate) {
             Write-Host "- Creating repository [$repo] from template [$($lzConfig.repoTemplate)]"
             gh repo create $org/$repo `
@@ -99,10 +84,20 @@ if (!$lzConfig.decommissioned) {
                 --private `
                 --description ($lzConfig.repoDescription ? $lzConfig.repoDescription : 'Automatically created by Climpr.')
         }
+        if ($LASTEXITCODE -ne 0) { throw "Unable to create repository [$org/$repo]." }
+        $repoInfo = Get-GitHubRepository -Organization $org -Repository $repo
     }
 
-    if ($lzConfig.repoId -and $repo -cne $lzConfig.repoName) {
-        Invoke-GitHubCliApiMethod -Method "PATCH" -Uri "/repos/$org/$repo" -Body (@{ name = $lzConfig.repoName } | ConvertTo-Json) -ErrorAction Stop | Out-Null
+    $repoUri = "/repositories/$($repoInfo.id)"
+    $repo = $repoInfo.name
+
+    if ($repoInfo.archived) {
+        Write-Host "- Unarchiving repository"
+        Invoke-GitHubCliApiMethod -Method "PATCH" -Uri $repoUri -Body (@{ archived = $false } | ConvertTo-Json) -ErrorAction Stop | Out-Null
+    }
+
+    if ($repo -cne $lzConfig.repoName) {
+        Invoke-GitHubCliApiMethod -Method "PATCH" -Uri $repoUri -Body (@{ name = $lzConfig.repoName } | ConvertTo-Json) -ErrorAction Stop | Out-Null
         Write-Host "Renamed repository [$repo] to [$($lzConfig.repoName)]."
         $repo = $lzConfig.repoName
     }
@@ -273,13 +268,13 @@ if (!$lzConfig.decommissioned) {
 
     #* Get current permissions
     $currentTeamsPermissions = @()
-    $currentTeams = Invoke-GitHubCliApiMethod -Method "GET" -Uri "/repos/$org/$repo/teams"
+    $currentTeams = Invoke-GitHubCliApiMethod -Method "GET" -Uri "$repoUri/teams"
     foreach ($team in $currentTeams) {
         $currentTeamsPermissions += "$($team.slug)/$($team.permission)"
     }
 
     $currentCollaboratorPermissions = @()
-    $currentCollaborators = Invoke-GitHubCliApiMethod -Method "GET" -Uri "/repos/$org/$repo/collaborators"
+    $currentCollaborators = Invoke-GitHubCliApiMethod -Method "GET" -Uri "$repoUri/collaborators"
     foreach ($collaborator in $currentCollaborators) {
         $permission = $roleToPermissionTable[$collaborator.role_name]
         $currentCollaboratorPermissions += "$($collaborator.login)/$permission"
@@ -386,7 +381,7 @@ if (!$lzConfig.decommissioned) {
                     permission = $permission
                 }
 
-                Invoke-GitHubCliApiMethod  -Method "PUT" -Uri "/repos/$org/$repo/collaborators/$slug" -Body ($body | ConvertTo-Json) | Out-Null
+                Invoke-GitHubCliApiMethod  -Method "PUT" -Uri "$repoUri/collaborators/$slug" -Body ($body | ConvertTo-Json) | Out-Null
                 Write-Host "  - Assigned [$permission] permission for collaborator [$slug] on repository [$org/$repo]." 
             }
             catch {
@@ -432,7 +427,7 @@ if (!$lzConfig.decommissioned) {
         $permission = $entry.Split("/")[1]
         if ($entry -notin ($explicitCollaboratorPermissions + $implicitCollaboratorPermissions)) {
             try {
-                Invoke-GitHubCliApiMethod -Method "DELETE" -Uri "/repos/$org/$repo/collaborators/$slug" | Out-Null
+                Invoke-GitHubCliApiMethod -Method "DELETE" -Uri "$repoUri/collaborators/$slug" | Out-Null
                 Write-Host "  - Removed [$permission] permission for collaborator [$slug] on repository [$org/$repo]." 
             }
             catch {
@@ -479,17 +474,17 @@ if (!$lzConfig.decommissioned) {
     }
 
     try {
-        $repositoryDetails = Invoke-GitHubCliApiMethod -Method "PATCH" -Uri "/repos/$org/$repo" -Body ($body | ConvertTo-Json)
+        Invoke-GitHubCliApiMethod -Method "PATCH" -Uri $repoUri -Body ($body | ConvertTo-Json) | Out-Null
         Write-Host "GitHub repository settings applied." 
     }
     catch {
         Write-Error "Unable to apply GitHub repository settings. GitHub Api response: $($_.Exception)"
     }
 
-    if ($backfillRepositoryIds -and $repositoryDetails.id -and $repositoryDetails.owner.id -and (!$lzConfig.repoId -or $lzConfig.organizationId -ne $repositoryDetails.owner.id)) {
+    if ($backfillRepositoryIds -and (!$lzConfig.repoId -or $lzConfig.organizationId -ne $repoInfo.owner.id)) {
         $metadata = Get-Content -Path $lzFile.FullName -Encoding utf8 | ConvertFrom-Json -Depth 10
-        $metadata | Add-Member -MemberType NoteProperty -Name "repoId" -Value $repositoryDetails.id -Force
-        $metadata | Add-Member -MemberType NoteProperty -Name "organizationId" -Value $repositoryDetails.owner.id -Force
+        $metadata | Add-Member -MemberType NoteProperty -Name "repoId" -Value $repoInfo.id -Force
+        $metadata | Add-Member -MemberType NoteProperty -Name "organizationId" -Value $repoInfo.owner.id -Force
         $metadata | ConvertTo-Json -Depth 10 | Set-Content -Path $lzFile.FullName -Encoding utf8 -NoNewline
 
         git commit --only -qm "[skip ci] Record Landing Zone GitHub IDs" -- $lzFile.FullName
@@ -524,7 +519,7 @@ if (!$lzConfig.decommissioned) {
     }
 
     try {
-        Invoke-GitHubCliApiMethod -Method "PUT" -Uri "/repos/$org/$repo/actions/oidc/customization/sub" -Body ($body | ConvertTo-Json) | Out-Null
+        Invoke-GitHubCliApiMethod -Method "PUT" -Uri "$repoUri/actions/oidc/customization/sub" -Body ($body | ConvertTo-Json) | Out-Null
         Write-Host "- OIDC hardening applied on repository [$org/$repo]." 
     }
     catch {
@@ -560,11 +555,11 @@ if (!$lzConfig.decommissioned) {
     elseif ("default" -eq $config) {
         Write-Host "- Branch protection rule property is 'default'. Default settings for GitHub is to not implement any branch protection rules."
         #* Check if there is already a branch protection rule enabled for the default branch
-        $currentBranchProtection = Invoke-GitHubCliApiMethod -Method "GET" -Uri "/repos/$org/$repo/branches/$defaultBranch/protection" -ErrorAction Ignore 2>$null
+        $currentBranchProtection = Invoke-GitHubCliApiMethod -Method "GET" -Uri "$repoUri/branches/$defaultBranch/protection" -ErrorAction Ignore 2>$null
         if ($currentBranchProtection) {
             #* Delete branch protection rule for default branch
             try {
-                Invoke-GitHubCliApiMethod -Method "DELETE" -Uri "/repos/$org/$repo/branches/$defaultBranch/protection" | Out-Null
+                Invoke-GitHubCliApiMethod -Method "DELETE" -Uri "$repoUri/branches/$defaultBranch/protection" | Out-Null
                 Write-Host "- Deleted branch protection rule on branch [$defaultBranch] on repository [$org/$repo]." 
             }
             catch {
@@ -578,7 +573,7 @@ if (!$lzConfig.decommissioned) {
     elseif ($null -ne $config) {
         Write-Host "- Branch protection rule property is: $($config | ConvertTo-Json -Depth 10)"
         try {
-            Invoke-GitHubCliApiMethod -Method "PUT" -Uri "/repos/$org/$repo/branches/$defaultBranch/protection" -Body ($config | ConvertTo-Json) | Out-Null
+            Invoke-GitHubCliApiMethod -Method "PUT" -Uri "$repoUri/branches/$defaultBranch/protection" -Body ($config | ConvertTo-Json) | Out-Null
             Write-Host "- Branch protection enabled on branch [$defaultBranch] on repository [$org/$repo]." 
         }
         catch {
@@ -616,7 +611,7 @@ if (!$lzConfig.decommissioned) {
         Write-Host "- CODEOWNERS file property is 'default'. Default settings for GitHub is to not implement any CODEOWNERS file."
 
         #* Check if CODEOWNERS file already exists in the default branch
-        $ghFile = Invoke-GitHubCliApiMethod -Method "GET" -Uri "/repos/$org/$repo/contents/.github/CODEOWNERS" -ErrorAction Ignore 2>$null
+        $ghFile = Invoke-GitHubCliApiMethod -Method "GET" -Uri "$repoUri/contents/.github/CODEOWNERS" -ErrorAction Ignore 2>$null
         
         #* Delete file
         if ($ghFile) {
@@ -625,7 +620,7 @@ if (!$lzConfig.decommissioned) {
                     message = "[skip ci] Delete CODEOWNERS file"
                     sha     = $ghFile.sha
                 }
-                Invoke-GitHubCliApiMethod -Method "DELETE" -Uri "/repos/$org/$repo/contents/.github/CODEOWNERS" -Body ($body | ConvertTo-Json) | Out-Null
+                Invoke-GitHubCliApiMethod -Method "DELETE" -Uri "$repoUri/contents/.github/CODEOWNERS" -Body ($body | ConvertTo-Json) | Out-Null
             }
             catch {
                 Write-Error "Unable to delete CODEOWNERS file on default branch [$defaultBranch]. GitHub Api response: $($_.Exception)"
@@ -644,9 +639,9 @@ if (!$lzConfig.decommissioned) {
         $content = $lzConfig.codeOwners | Out-String
     
         #* Check if CODEOWNERS file already exists
-        $ghFile = Invoke-GitHubCliApiMethod -Method "GET" -Uri "/repos/$org/$repo/contents/.github/CODEOWNERS" -ErrorAction Ignore 2>$null
+        $ghFile = Invoke-GitHubCliApiMethod -Method "GET" -Uri "$repoUri/contents/.github/CODEOWNERS" -ErrorAction Ignore 2>$null
         if ($ghFile) {
-            $currentContent = Invoke-RestMethod -Uri $ghFile.download_url
+            $currentContent = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($ghFile.content))
             $body += @{ sha = $ghFile.sha }
             $update = $content -cne $currentContent
         }
@@ -659,7 +654,7 @@ if (!$lzConfig.decommissioned) {
                     content = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($content))
                 }
 
-                Invoke-GitHubCliApiMethod -Method "PUT" -Uri "/repos/$org/$repo/contents/.github/CODEOWNERS" -Body ($body | ConvertTo-Json) | Out-Null
+                Invoke-GitHubCliApiMethod -Method "PUT" -Uri "$repoUri/contents/.github/CODEOWNERS" -Body ($body | ConvertTo-Json) | Out-Null
                 Write-Host "- CODEOWNERS file created/updated on default branch [$defaultBranch]."
             }
             catch {
@@ -709,7 +704,7 @@ if (!$lzConfig.decommissioned) {
         }
 
         #* Check if environment exists
-        $currentEnvironment = Invoke-GitHubCliApiMethod -Method "GET" -Uri "/repos/$org/$repo/environments/$environmentName" -ErrorAction Ignore 2>$null
+        $currentEnvironment = Invoke-GitHubCliApiMethod -Method "GET" -Uri "$repoUri/environments/$environmentName" -ErrorAction Ignore 2>$null
         if (!$currentEnvironment -and ($null -eq $config -or $config -eq "ignore")) {
             $config = "default"
             Write-Host "- Environment not found. Creating environment once with default settings."
@@ -738,7 +733,7 @@ if (!$lzConfig.decommissioned) {
         #* Configure setting
         if ($configure) {
             try {
-                Invoke-GitHubCliApiMethod -Method "PUT" -Uri "/repos/$org/$repo/environments/$environmentName" -Body ($config | ConvertTo-Json) | Out-Null
+                Invoke-GitHubCliApiMethod -Method "PUT" -Uri "$repoUri/environments/$environmentName" -Body ($config | ConvertTo-Json) | Out-Null
                 Write-Host "- Run protection settings configured on environment [$environmentName] on repository [$org/$repo]." 
             }
             catch {
@@ -796,12 +791,12 @@ if (!$lzConfig.decommissioned) {
         #* Configure setting
         if ($configure) {
             #* Remove patterns not present in the desired configuration
-            $currentPatterns = Invoke-GitHubCliApiMethod -Method "GET" -Uri "/repos/$org/$repo/environments/$environmentName/deployment-branch-policies" -ErrorAction Ignore 2>$null
+            $currentPatterns = Invoke-GitHubCliApiMethod -Method "GET" -Uri "$repoUri/environments/$environmentName/deployment-branch-policies" -ErrorAction Ignore 2>$null
             foreach ($pattern in $currentPatterns.branch_policies) {
                 $shallExists = $branchPolicyPatterns | Where-Object { $_.name -eq $pattern.name -and $_.type -eq $pattern.type }
                 if (!$shallExists) {
                     try {
-                        Invoke-GitHubCliApiMethod -Method "DELETE" -Uri "/repos/$org/$repo/environments/$environmentName/deployment-branch-policies/$($pattern.id)" | Out-Null
+                        Invoke-GitHubCliApiMethod -Method "DELETE" -Uri "$repoUri/environments/$environmentName/deployment-branch-policies/$($pattern.id)" | Out-Null
                         Write-Host "- [$environmentName] Deleted branch policy pattern [$($pattern.name)]."
                     }
                     catch {
@@ -818,7 +813,7 @@ if (!$lzConfig.decommissioned) {
                 }
 
                 try {
-                    Invoke-GitHubCliApiMethod -Method "POST" -Uri "/repos/$org/$repo/environments/$environmentName/deployment-branch-policies" -Body ($body | ConvertTo-Json) | Out-Null
+                    Invoke-GitHubCliApiMethod -Method "POST" -Uri "$repoUri/environments/$environmentName/deployment-branch-policies" -Body ($body | ConvertTo-Json) | Out-Null
                     Write-Host "- [$environmentName] Created branch policy pattern [$($pattern.name)]." 
                 }
                 catch {

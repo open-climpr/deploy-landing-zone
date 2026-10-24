@@ -8,7 +8,10 @@ function Invoke-GitHubCliApiMethod {
         $Method,
 
         [string]
-        $Body
+        $Body,
+
+        [switch]
+        $AllowNotFound
     )
     
     if ($Method -eq "GET") {
@@ -31,8 +34,29 @@ function Invoke-GitHubCliApiMethod {
         return ($response | ConvertFrom-Json)
     }
     else {
-        throw ($response | ConvertFrom-Json)
+        $apiError = $response | ConvertFrom-Json
+        if ($AllowNotFound -and $apiError.status -eq "404") {
+            return
+        }
+        throw $apiError
     }
+}
+
+function Get-GitHubRepository {
+    [CmdletBinding()]
+    param (
+        [string] $Organization,
+        [string] $Repository,
+        [long] $RepositoryId,
+        [switch] $AllowMissing
+    )
+
+    $uri = $RepositoryId ? "/repositories/$RepositoryId" : "/repos/$Organization/$Repository"
+    $repoInfo = Invoke-GitHubCliApiMethod -Method "GET" -Uri $uri -AllowNotFound:($AllowMissing -and !$RepositoryId) -ErrorAction Stop
+    if ($repoInfo -and $repoInfo.owner.login -ine $Organization) {
+        throw "Repository [$($repoInfo.id)] does not belong to organization [$Organization]."
+    }
+    return $repoInfo
 }
 
 function Join-HashTable {
