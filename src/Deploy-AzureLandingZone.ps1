@@ -52,11 +52,11 @@ $lzConfig = Get-Content -Path $lzFile.FullName -Encoding utf8 | ConvertFrom-Json
 $lzConfigPSObject = Get-Content -Path $lzFile.FullName -Encoding utf8 | ConvertFrom-Json -Depth 10
 
 #* Declare git variables
-$org = $lzConfig.organization
-$repo = $lzConfig.repoName
+$orgName = $lzConfig.organization
+$repoName = $lzConfig.repoName
 
 if (!$lzConfig.decommissioned) {
-    $repoInfo = Get-GitHubRepository -Organization $org -Repository $repo -RepositoryId $lzConfig.repoId
+    $repoInfo = Get-GitHubRepository -OrganizationName $orgName -RepositoryName $repoName -RepositoryId $lzConfig.repoId
     $repoUri = "/repositories/$($repoInfo.id)"
 
     ##################################

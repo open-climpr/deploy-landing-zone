@@ -141,6 +141,16 @@ Repositories are identified by `repoId` in `metadata.json` whenever it is presen
 
 Set `lzManagement.backfillRepositoryIds` to `true` in `climprconfig.json` to record `repoId` and the owner's `organizationId` in `metadata.json` and commit and push that file with `[skip ci]`. A missing or outdated owner ID is also updated. Omitted or `false` disables these metadata writes; it does not affect repository matching.
 
-Set `useImmutableOidcSubject` to `true` in a Landing Zone's `metadata.json` to opt that repository into immutable OIDC subjects. Update the UAMI's federated credential to match before enabling it. Omitted or `false` leaves the format unchanged; GitHub automatically enforces immutable subjects for repositories created, renamed, or transferred after July 15, 2026. This setting is independent of `lzManagement.backfillRepositoryIds`.
+Configure OIDC defaults in `climprconfig.json` under `lzManagement.oidc`. A Landing Zone's `metadata.json` can override individual settings with its own `oidc` block:
+
+```json
+"oidc": {
+  "useDefault": false,
+  "includeClaimKeys": ["repo", "context", "ref", "workflow"],
+  "useImmutableSubject": true
+}
+```
+
+Metadata values take precedence, including explicit `false` values. Omitted properties fall back to `lzManagement.oidc`, then the action's existing defaults. If `useImmutableSubject` is omitted from both blocks, it is not sent to GitHub. Update the UAMI's federated credential to match any subject changes before applying them. These settings are independent of `lzManagement.backfillRepositoryIds`.
 
 For any Landing Zone with an Azure environment, a `.bicepparam` file must be made for each environment. The file must be named: `<environment>.bicepparam`. For example: `prod.bicepparam`. The `.bicepparam` must be linked to the archetype `main.bicep` file with the `using` statement.

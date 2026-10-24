@@ -45,16 +45,16 @@ function Invoke-GitHubCliApiMethod {
 function Get-GitHubRepository {
     [CmdletBinding()]
     param (
-        [string] $Organization,
-        [string] $Repository,
+        [string] $OrganizationName,
+        [string] $RepositoryName,
         [long] $RepositoryId,
         [switch] $AllowMissing
     )
 
-    $uri = $RepositoryId ? "/repositories/$RepositoryId" : "/repos/$Organization/$Repository"
+    $uri = $RepositoryId ? "/repositories/$RepositoryId" : "/repos/$OrganizationName/$RepositoryName"
     $repoInfo = Invoke-GitHubCliApiMethod -Method "GET" -Uri $uri -AllowNotFound:($AllowMissing -and !$RepositoryId) -ErrorAction Stop
-    if ($repoInfo -and $repoInfo.owner.login -ine $Organization) {
-        throw "Repository [$($repoInfo.id)] does not belong to organization [$Organization]."
+    if ($repoInfo -and $repoInfo.owner.login -ine $OrganizationName) {
+        throw "Repository [$($repoInfo.id)] does not belong to organization [$OrganizationName]."
     }
     return $repoInfo
 }

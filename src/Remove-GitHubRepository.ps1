@@ -31,18 +31,18 @@ Write-Debug "[$($lzDirectory.BaseName)] Found $($lzFile.Name) file."
 $lzConfig = Get-Content -Path $lzFile.FullName -Encoding utf8 | ConvertFrom-Json -AsHashtable -Depth 10
 
 #* Declare git variables
-$org = $lzConfig.organization
-$repo = $lzConfig.repoName
+$orgName = $lzConfig.organization
+$repoName = $lzConfig.repoName
 
 #* Find existing Git repository if any
-$repoInfo = Get-GitHubRepository -Organization $org -Repository $repo -RepositoryId $lzConfig.repoId -AllowMissing
+$repoInfo = Get-GitHubRepository -OrganizationName $orgName -RepositoryName $repoName -RepositoryId $lzConfig.repoId -AllowMissing
 
 $failedEnvironmentOperations = @()
 
 if ($repoInfo) {
     $repoUri = "/repositories/$($repoInfo.id)"
-    $repo = $repoInfo.name
-    Write-Host "Found GitHub repo '$repo'."
+    $repoName = $repoInfo.name
+    Write-Host "Found GitHub repo '$repoName'."
 
     ##################################
     ###* Processing environments
