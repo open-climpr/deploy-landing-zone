@@ -35,9 +35,7 @@ $org = $lzConfig.organization
 $repo = $lzConfig.repoName
 
 #* Find existing Git repository if any
-$climprConfigPath = (Test-Path -Path "$SolutionPath/climprconfig.json") ? "$SolutionPath/climprconfig.json" : "climprconfig.json"
-$climprConfig = Get-Content -Path $climprConfigPath | ConvertFrom-Json -AsHashtable -Depth 10 -NoEnumerate
-if ($climprConfig.lzManagement.useRepositoryId -eq $true -and $lzConfig.repoId) {
+if ($lzConfig.repoId) {
     $repoInfo = Invoke-GitHubCliApiMethod -Method "GET" -Uri "/repositories/$($lzConfig.repoId)" -ErrorAction Stop
     if ($repoInfo.owner.login -ine $org) {
         throw "Repository [$($lzConfig.repoId)] does not belong to organization [$org]."
