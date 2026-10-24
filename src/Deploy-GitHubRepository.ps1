@@ -486,17 +486,18 @@ if (!$lzConfig.decommissioned) {
         Write-Error "Unable to apply GitHub repository settings. GitHub Api response: $($_.Exception)"
     }
 
-    if ($useRepositoryId -and !$lzConfig.id -and $repositoryDetails.id) {
+    if ($useRepositoryId -and $repositoryDetails.id -and $repositoryDetails.owner.id -and (!$lzConfig.id -or $lzConfig.organizationId -ne $repositoryDetails.owner.id)) {
         $metadata = Get-Content -Path $lzFile.FullName -Encoding utf8 | ConvertFrom-Json -Depth 10
         $metadata | Add-Member -MemberType NoteProperty -Name "id" -Value $repositoryDetails.id -Force
+        $metadata | Add-Member -MemberType NoteProperty -Name "organizationId" -Value $repositoryDetails.owner.id -Force
         $metadata | ConvertTo-Json -Depth 10 | Set-Content -Path $lzFile.FullName -Encoding utf8 -NoNewline
 
-        git commit --only -qm "[skip ci] Record Landing Zone repository ID" -- $lzFile.FullName
-        if ($LASTEXITCODE -ne 0) { throw "Unable to commit the repository ID." }
+        git commit --only -qm "[skip ci] Record Landing Zone GitHub IDs" -- $lzFile.FullName
+        if ($LASTEXITCODE -ne 0) { throw "Unable to commit the GitHub IDs." }
         git pull -q --rebase
-        if ($LASTEXITCODE -ne 0) { throw "Unable to rebase the repository ID commit." }
+        if ($LASTEXITCODE -ne 0) { throw "Unable to rebase the GitHub IDs commit." }
         git push -q
-        if ($LASTEXITCODE -ne 0) { throw "Unable to push the repository ID commit." }
+        if ($LASTEXITCODE -ne 0) { throw "Unable to push the GitHub IDs commit." }
     }
 
     #endregion
@@ -517,6 +518,9 @@ if (!$lzConfig.decommissioned) {
     $body = @{
         use_default        = $false
         include_claim_keys = $includedClaims
+    }
+    if ($lzConfig.useImmutableOidcSubject -eq $true) {
+        $body.use_immutable_subject = $true
     }
 
     try {

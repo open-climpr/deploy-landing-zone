@@ -137,8 +137,10 @@ Each Landing Zone has a dedicated directory under the desired root directory `lz
 
 A Landing Zone is defined by a file called: `metadata.json`. This file contains the definition of the Landing Zone, both GitHub properties and Azure properties.
 
-Set `lzManagement.useRepositoryId` to `true` in `climprconfig.json` to identify repositories by their numeric GitHub ID. The action records a missing `id` in `metadata.json` and commits and pushes that file with `[skip ci]`. Once the ID is recorded, changing `repoName` renames the existing repository. An ID that cannot be resolved fails the operation; it does not create a replacement repository. Repositories must remain in the configured `organization`.
+Set `lzManagement.useRepositoryId` to `true` in `climprconfig.json` to identify repositories by their numeric GitHub ID. The action records `id` and the owner's `organizationId` in `metadata.json` and commits and pushes that file with `[skip ci]`. A missing or outdated owner ID is also updated. Once the repository ID is recorded, changing `repoName` renames the existing repository. An ID that cannot be resolved fails the operation; it does not create a replacement repository. Repositories must remain in the configured `organization`.
 
 When the setting is omitted or `false`, repositories are matched by name as before, and no ID is recorded. With the setting enabled and no ID yet recorded, the action initially finds or creates the repository by name.
+
+Set `useImmutableOidcSubject` to `true` in a Landing Zone's `metadata.json` to opt that repository into immutable OIDC subjects. Update the UAMI's federated credential to match before enabling it. Omitted or `false` leaves the format unchanged; GitHub automatically enforces immutable subjects for repositories created, renamed, or transferred after July 15, 2026. This setting is independent of `lzManagement.useRepositoryId`.
 
 For any Landing Zone with an Azure environment, a `.bicepparam` file must be made for each environment. The file must be named: `<environment>.bicepparam`. For example: `prod.bicepparam`. The `.bicepparam` must be linked to the archetype `main.bicep` file with the `using` statement.
