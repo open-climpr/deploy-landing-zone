@@ -32,6 +32,7 @@ Write-Debug "Script root directory: $(Resolve-Path -Relative -Path $scriptRoot)"
 
 #* Import Modules
 Import-Module $scriptRoot/modules/azure.psm1 -Force
+Import-Module $scriptRoot/modules/support-functions.psm1 -Force
 
 #* Resolve files
 $lzFile = Get-Item -Path "$LandingZonePath/metadata.json" -Force
@@ -51,10 +52,13 @@ $lzConfig = Get-Content -Path $lzFile.FullName -Encoding utf8 | ConvertFrom-Json
 $lzConfigPSObject = Get-Content -Path $lzFile.FullName -Encoding utf8 | ConvertFrom-Json -Depth 10
 
 #* Declare git variables
-$org = $lzConfig.organization
-$repo = $lzConfig.repoName
+$orgName = $lzConfig.organization
+$repoName = $lzConfig.repoName
 
 if (!$lzConfig.decommissioned) {
+    $repoInfo = Get-GitHubRepository -OrganizationName $orgName -RepositoryName $repoName -RepositoryId $lzConfig.repoId
+    $repoUri = "/repositories/$($repoInfo.id)"
+
     ##################################
     ###* Processing environments
     ##################################
@@ -173,10 +177,12 @@ if (!$lzConfig.decommissioned) {
 
                     foreach ($name in $outputVars.Keys) {
                         if ($outputVars[$name]) {
-                            gh variable set $name `
-                                --repo $org/$repo `
-                                --body "$($outputVars[$name].Value)" `
-                                --env $environmentName
+                            $variablesUri = "$repoUri/environments/$([uri]::EscapeDataString($environmentName))/variables"
+                            $variable = Invoke-GitHubCliApiMethod -Method "GET" -Uri "$variablesUri/$name" -AllowNotFound -ErrorAction Stop
+                            $body = @{ name = $name; value = "$($outputVars[$name].Value)" } | ConvertTo-Json
+                            $method = $variable ? "PATCH" : "POST"
+                            $uri = $variable ? "$variablesUri/$name" : $variablesUri
+                            Invoke-GitHubCliApiMethod -Method $method -Uri $uri -Body $body -ErrorAction Stop | Out-Null
                             Write-Host "Updated repository environment [$environmentName] variable [$name]"
                         }
                     }

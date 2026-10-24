@@ -31,16 +31,18 @@ Write-Debug "[$($lzDirectory.BaseName)] Found $($lzFile.Name) file."
 $lzConfig = Get-Content -Path $lzFile.FullName -Encoding utf8 | ConvertFrom-Json -AsHashtable -Depth 10
 
 #* Declare git variables
-$org = $lzConfig.organization
-$repo = $lzConfig.repoName
+$orgName = $lzConfig.organization
+$repoName = $lzConfig.repoName
 
 #* Find existing Git repository if any
-$repoInfo = gh repo view $org/$repo --json "name,isArchived" | ConvertFrom-Json
+$repoInfo = Get-GitHubRepository -OrganizationName $orgName -RepositoryName $repoName -RepositoryId $lzConfig.repoId -AllowMissing
 
 $failedEnvironmentOperations = @()
 
 if ($repoInfo) {
-    Write-Host "Found GitHub repo '$repo'."
+    $repoUri = "/repositories/$($repoInfo.id)"
+    $repoName = $repoInfo.name
+    Write-Host "Found GitHub repo '$repoName'."
 
     ##################################
     ###* Processing environments
@@ -64,12 +66,12 @@ if ($repoInfo) {
             #* Checking for existing environments
             try {
                 Write-Debug "Checking if environment should be deleted."
-                $currentEnvironments = Invoke-GitHubCliApiMethod -Method "GET" -Uri "/repos/$org/$repo/environments"
+                $currentEnvironments = Invoke-GitHubCliApiMethod -Method "GET" -Uri "$repoUri/environments"
 
                 if ($currentEnvironments.environments.name -contains $environmentName) {
                     #* Deleting environment
                     try {
-                        Invoke-GitHubCliApiMethod -Method "DELETE" -Uri "/repos/$org/$repo/environments/$environmentName"
+                        Invoke-GitHubCliApiMethod -Method "DELETE" -Uri "$repoUri/environments/$environmentName"
                         Write-Host "[$environmentName] Successfully deleted GitHub environment."
                     }
                     catch {
@@ -104,9 +106,9 @@ if ($repoInfo) {
     Write-Debug "Checking if repository should be archived."
 
     if ($lzConfig.decommissioned) {
-        if (!$repoInfo.isArchived) {
+        if (!$repoInfo.archived) {
             try {
-                gh repo archive $org/$repo --yes
+                Invoke-GitHubCliApiMethod -Method "PATCH" -Uri $repoUri -Body (@{ archived = $true } | ConvertTo-Json) -ErrorAction Stop | Out-Null
                 Write-Host "Successfully archived repository."
             }
             catch {
