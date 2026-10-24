@@ -109,7 +109,7 @@ if (!$lzConfig.decommissioned) {
     if ($defaultTeamConfig.enabled) {
         #* Calculate names
         $lzTeamName = $defaultTeamConfig.teamNamePrefix + ($defaultTeamConfig.teamNameIncludeLzName ? $repoName : "") + $defaultTeamConfig.teamNameSuffix
-        $lzGroupName = $defaultTeamConfig.groupNamePrefix + ($defaultTeamConfig.groupNameIncludeLzName ? $repoName : "") + $defaultTeamConfig.groupNameSuffix
+        $lzGroupName = $defaultTeamConfig.lzGroupNamePrefix + ($defaultTeamConfig.lzGroupNameIncludeLzName ? $repoName : "") + $defaultTeamConfig.lzGroupNameSuffix
         $description = $defaultTeamConfig.descriptionPrefix + ($defaultTeamConfig.descriptionIncludeLzName ? $repoName : "") + $defaultTeamConfig.descriptionSuffix
         $lzTeamSlug = $lzTeamName.replace(" ", "-").ToLower()
         
@@ -225,7 +225,7 @@ if (!$lzConfig.decommissioned) {
 
         if ($defaultTeamConfig.enabled) {
             $newTeamName = $defaultTeamConfig.teamNamePrefix + ($defaultTeamConfig.teamNameIncludeLzName ? $repoName : "") + $defaultTeamConfig.teamNameSuffix
-            $newGroupName = $defaultTeamConfig.groupNamePrefix + ($defaultTeamConfig.groupNameIncludeLzName ? $repoName : "") + $defaultTeamConfig.groupNameSuffix
+            $newGroupName = $defaultTeamConfig.lzGroupNamePrefix + ($defaultTeamConfig.lzGroupNameIncludeLzName ? $repoName : "") + $defaultTeamConfig.lzGroupNameSuffix
             $newDescription = $defaultTeamConfig.descriptionPrefix + ($defaultTeamConfig.descriptionIncludeLzName ? $repoName : "") + $defaultTeamConfig.descriptionSuffix
 
             if ($newTeamName -cne $lzTeamName -or $newDescription -cne $description) {
