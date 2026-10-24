@@ -35,7 +35,18 @@ $org = $lzConfig.organization
 $repo = $lzConfig.repoName
 
 #* Find existing Git repository if any
-$repoInfo = gh repo view $org/$repo --json "name,isArchived" | ConvertFrom-Json
+$climprConfigPath = (Test-Path -Path "$SolutionPath/climprconfig.json") ? "$SolutionPath/climprconfig.json" : "climprconfig.json"
+$climprConfig = Get-Content -Path $climprConfigPath | ConvertFrom-Json -AsHashtable -Depth 10 -NoEnumerate
+if ($climprConfig.lzManagement.useRepositoryId -eq $true -and $lzConfig.id) {
+    $repoInfo = Invoke-GitHubCliApiMethod -Method "GET" -Uri "/repositories/$($lzConfig.id)" -ErrorAction Stop
+    if ($repoInfo.owner.login -ine $org) {
+        throw "Repository [$($lzConfig.id)] does not belong to organization [$org]."
+    }
+    $repo = $repoInfo.name
+}
+else {
+    $repoInfo = gh repo view $org/$repo --json "name,isArchived" | ConvertFrom-Json
+}
 
 $failedEnvironmentOperations = @()
 
@@ -104,7 +115,7 @@ if ($repoInfo) {
     Write-Debug "Checking if repository should be archived."
 
     if ($lzConfig.decommissioned) {
-        if (!$repoInfo.isArchived) {
+        if (!($repoInfo.isArchived -or $repoInfo.archived)) {
             try {
                 gh repo archive $org/$repo --yes
                 Write-Host "Successfully archived repository."

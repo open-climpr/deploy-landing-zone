@@ -38,6 +38,7 @@ $climprConfig = Get-Content -Path $climprConfigPath | ConvertFrom-Json -AsHashta
 
 #* Declare climprconfig settings
 $defaultRepositoryConfig = $climprConfig.lzManagement.gitWorkloadRepository
+$useRepositoryId = $climprConfig.lzManagement.useRepositoryId -eq $true
 
 #* Parse Landing Zone configuration file
 $lzConfig = Get-Content -Path $lzFile.FullName -Encoding utf8 | ConvertFrom-Json -AsHashtable -Depth 10
@@ -63,13 +64,22 @@ if (!$lzConfig.decommissioned) {
 
     #* Check if the repository already exists
     Write-Host "- Check if the repository already exists '$repo'"
-    $repoInfo = gh repo view $org/$repo --json "name,isArchived" | ConvertFrom-Json
+    if ($useRepositoryId -and $lzConfig.id) {
+        $repoInfo = Invoke-GitHubCliApiMethod -Method "GET" -Uri "/repositories/$($lzConfig.id)" -ErrorAction Stop
+        if ($repoInfo.owner.login -ine $org) {
+            throw "Repository [$($lzConfig.id)] does not belong to organization [$org]."
+        }
+        $repo = $repoInfo.name
+    }
+    else {
+        $repoInfo = gh repo view $org/$repo --json "name,isArchived" | ConvertFrom-Json
+    }
     if ($repoInfo) {
         Write-Host "- Found GitHub repository'$repo'"
     }
 
     if ($repoInfo) {
-        if ($repoInfo.isArchived) {
+        if ($repoInfo.isArchived -or $repoInfo.archived) {
             Write-Host "- Unarchiving repository"
             gh repo unarchive $org/$repo --yes
         }
@@ -89,6 +99,12 @@ if (!$lzConfig.decommissioned) {
                 --private `
                 --description ($lzConfig.repoDescription ? $lzConfig.repoDescription : 'Automatically created by Climpr.')
         }
+    }
+
+    if ($useRepositoryId -and $lzConfig.id -and $repo -cne $lzConfig.repoName) {
+        Invoke-GitHubCliApiMethod -Method "PATCH" -Uri "/repos/$org/$repo" -Body (@{ name = $lzConfig.repoName } | ConvertTo-Json) -ErrorAction Stop | Out-Null
+        Write-Host "Renamed repository [$repo] to [$($lzConfig.repoName)]."
+        $repo = $lzConfig.repoName
     }
 
     #endregion
@@ -463,11 +479,24 @@ if (!$lzConfig.decommissioned) {
     }
 
     try {
-        Invoke-GitHubCliApiMethod -Method "PATCH" -Uri "/repos/$org/$repo" -Body ($body | ConvertTo-Json) | Out-Null
+        $repositoryDetails = Invoke-GitHubCliApiMethod -Method "PATCH" -Uri "/repos/$org/$repo" -Body ($body | ConvertTo-Json)
         Write-Host "GitHub repository settings applied." 
     }
     catch {
         Write-Error "Unable to apply GitHub repository settings. GitHub Api response: $($_.Exception)"
+    }
+
+    if ($useRepositoryId -and !$lzConfig.id -and $repositoryDetails.id) {
+        $metadata = Get-Content -Path $lzFile.FullName -Encoding utf8 | ConvertFrom-Json -Depth 10
+        $metadata | Add-Member -MemberType NoteProperty -Name "id" -Value $repositoryDetails.id -Force
+        $metadata | ConvertTo-Json -Depth 10 | Set-Content -Path $lzFile.FullName -Encoding utf8 -NoNewline
+
+        git commit --only -qm "[skip ci] Record Landing Zone repository ID" -- $lzFile.FullName
+        if ($LASTEXITCODE -ne 0) { throw "Unable to commit the repository ID." }
+        git pull -q --rebase
+        if ($LASTEXITCODE -ne 0) { throw "Unable to rebase the repository ID commit." }
+        git push -q
+        if ($LASTEXITCODE -ne 0) { throw "Unable to push the repository ID commit." }
     }
 
     #endregion

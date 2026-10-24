@@ -137,4 +137,8 @@ Each Landing Zone has a dedicated directory under the desired root directory `lz
 
 A Landing Zone is defined by a file called: `metadata.json`. This file contains the definition of the Landing Zone, both GitHub properties and Azure properties.
 
+Set `lzManagement.useRepositoryId` to `true` in `climprconfig.json` to identify repositories by their numeric GitHub ID. The action records a missing `id` in `metadata.json` and commits and pushes that file with `[skip ci]`. Once the ID is recorded, changing `repoName` renames the existing repository. An ID that cannot be resolved fails the operation; it does not create a replacement repository. Repositories must remain in the configured `organization`.
+
+When the setting is omitted or `false`, repositories are matched by name as before, and no ID is recorded. With the setting enabled and no ID yet recorded, the action initially finds or creates the repository by name.
+
 For any Landing Zone with an Azure environment, a `.bicepparam` file must be made for each environment. The file must be named: `<environment>.bicepparam`. For example: `prod.bicepparam`. The `.bicepparam` must be linked to the archetype `main.bicep` file with the `using` statement.
