@@ -64,10 +64,10 @@ if (!$lzConfig.decommissioned) {
 
     #* Check if the repository already exists
     Write-Host "- Check if the repository already exists '$repo'"
-    if ($useRepositoryId -and $lzConfig.id) {
-        $repoInfo = Invoke-GitHubCliApiMethod -Method "GET" -Uri "/repositories/$($lzConfig.id)" -ErrorAction Stop
+    if ($useRepositoryId -and $lzConfig.repoId) {
+        $repoInfo = Invoke-GitHubCliApiMethod -Method "GET" -Uri "/repositories/$($lzConfig.repoId)" -ErrorAction Stop
         if ($repoInfo.owner.login -ine $org) {
-            throw "Repository [$($lzConfig.id)] does not belong to organization [$org]."
+            throw "Repository [$($lzConfig.repoId)] does not belong to organization [$org]."
         }
         $repo = $repoInfo.name
     }
@@ -101,7 +101,7 @@ if (!$lzConfig.decommissioned) {
         }
     }
 
-    if ($useRepositoryId -and $lzConfig.id -and $repo -cne $lzConfig.repoName) {
+    if ($useRepositoryId -and $lzConfig.repoId -and $repo -cne $lzConfig.repoName) {
         Invoke-GitHubCliApiMethod -Method "PATCH" -Uri "/repos/$org/$repo" -Body (@{ name = $lzConfig.repoName } | ConvertTo-Json) -ErrorAction Stop | Out-Null
         Write-Host "Renamed repository [$repo] to [$($lzConfig.repoName)]."
         $repo = $lzConfig.repoName
@@ -486,9 +486,9 @@ if (!$lzConfig.decommissioned) {
         Write-Error "Unable to apply GitHub repository settings. GitHub Api response: $($_.Exception)"
     }
 
-    if ($useRepositoryId -and $repositoryDetails.id -and $repositoryDetails.owner.id -and (!$lzConfig.id -or $lzConfig.organizationId -ne $repositoryDetails.owner.id)) {
+    if ($useRepositoryId -and $repositoryDetails.id -and $repositoryDetails.owner.id -and (!$lzConfig.repoId -or $lzConfig.organizationId -ne $repositoryDetails.owner.id)) {
         $metadata = Get-Content -Path $lzFile.FullName -Encoding utf8 | ConvertFrom-Json -Depth 10
-        $metadata | Add-Member -MemberType NoteProperty -Name "id" -Value $repositoryDetails.id -Force
+        $metadata | Add-Member -MemberType NoteProperty -Name "repoId" -Value $repositoryDetails.id -Force
         $metadata | Add-Member -MemberType NoteProperty -Name "organizationId" -Value $repositoryDetails.owner.id -Force
         $metadata | ConvertTo-Json -Depth 10 | Set-Content -Path $lzFile.FullName -Encoding utf8 -NoNewline
 
